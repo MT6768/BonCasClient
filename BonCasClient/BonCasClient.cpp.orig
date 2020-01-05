@@ -122,7 +122,7 @@ extern "C" __declspec(dllexport) LONG WINAPI CasLinkListReadersA(SCARDCONTEXT hC
 			*((LPCSTR *)mszReaders) = szReaderName;		
 			return SCARD_S_SUCCESS;
 		}else{
-			*pcchReaders = sizeof(szReaderName) / sizeof(szReaderName[0]);
+			*pcchReaders = sizeof(szReaderName);
 		}
 	}
 
@@ -140,7 +140,7 @@ extern "C" __declspec(dllexport) LONG WINAPI CasLinkListReadersW(SCARDCONTEXT hC
 			*((LPCWSTR *)mszReaders) = szReaderName;		
 			return SCARD_S_SUCCESS;
 		}else{
-			*pcchReaders = sizeof(szReaderName) / sizeof(szReaderName[0]);
+			*pcchReaders = sizeof(szReaderName);
 		}
 	}
 
