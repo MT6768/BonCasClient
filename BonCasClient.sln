@@ -1,6 +1,8 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 9.00
-# Visual Studio 2005
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.572
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BonSDK", "BonSDK", "{0992BA15-108C-43C7-BB65-DA5213389908}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Include", "Include", "{61160100-9DA5-4461-B93A-008563C99931}"
@@ -43,7 +45,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Release", "Release", "{19EC
 		BonSDK\Lib\Release\BonCoreEngine.lib = BonSDK\Lib\Release\BonCoreEngine.lib
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BonCasClient", "BonCasClient\BonCasClient.vcproj", "{F4E7DFCA-1C20-4D24-9F66-959CD9D548C1}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BonCasClient", "BonCasClient\BonCasClient.vcxproj", "{F4E7DFCA-1C20-4D24-9F66-959CD9D548C1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -70,5 +72,8 @@ Global
 		{7F06B384-4B2A-433C-9007-02F1FECFA63F} = {0992BA15-108C-43C7-BB65-DA5213389908}
 		{A9A74156-5D32-48D9-90CD-D7F2026CC9E1} = {7F06B384-4B2A-433C-9007-02F1FECFA63F}
 		{19ECE097-8A71-4DAB-8856-540B2630D88D} = {7F06B384-4B2A-433C-9007-02F1FECFA63F}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2F4C0AF6-F2BE-4A2E-9A45-361BAD90967F}
 	EndGlobalSection
 EndGlobal
