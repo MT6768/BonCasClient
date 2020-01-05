@@ -1,0 +1,21 @@
+EXPORTS
+	SetConfig
+	CasLinkConnectA
+	CasLinkConnectW
+	CasLinkDisconnect
+	CasLinkEstablishContext
+	CasLinkFreeMemory
+	CasLinkListReadersA
+	CasLinkListReadersW
+	CasLinkTransmit
+	CasLinkReleaseContext
+
+	SCardConnectA		=CasLinkConnectA
+	SCardConnectW		=CasLinkConnectW
+	SCardDisconnect		=CasLinkDisconnect
+	SCardEstablishContext	=CasLinkEstablishContext
+	SCardFreeMemory		=CasLinkFreeMemory
+	SCardListReadersA	=CasLinkListReadersA
+	SCardListReadersW	=CasLinkListReadersW
+	SCardTransmit		=CasLinkTransmit
+	SCardReleaseContext	=CasLinkReleaseContext
