@@ -5,7 +5,7 @@
 
 BonCasClient v1.1.1 ( http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient(1.1.1).zip ) に同梱されているソースコードの Mirror
 
-ビルド環境を Visual Studio 2019 (VS2019) に更新した事、パッチ ( [BonCasClient_fix.diff.txt)](http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient_fix.diff.txt) ) を当てた事、この README.md を作成した事以外はオリジナルのままとなっている。  
+ビルド環境を Visual Studio 2019 (VS2019) に更新した事、パッチ ( [BonCasClient_fix.diff.txt](http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient_fix.diff.txt ) ) を当てた事、この README.md を作成した事以外はオリジナルのままとなっている。  
 以下のドキュメントは [BonCasClient.txt](BonCasClient.txt) を現状に合わせて一部改変し、Markdown 形式に書き換えたものである。  
 オリジナルの [BonCasClient.txt](BonCasClient.txt) も参照されたい。
 
