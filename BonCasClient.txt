@@ -1,0 +1,50 @@
+BonCasClient
+
+
+■BonCasClient.dll
+BonCasLinkのクライアントインターフェースを実装したDLL。
+EXPORTされているIFはSCardXXXXと型互換の以下9関数CasLinkXXXXと
+	CasLinkConnectA
+	CasLinkConnectW
+	CasLinkDisconnect
+	CasLinkEstablishContext
+	CasLinkFreeMemory
+	CasLinkListReadersA
+	CasLinkListReadersW
+	CasLinkTransmit
+	CasLinkReleaseContext
+接続先を設定する1関数
+	void SetConfig(const DWORD dwIP, const WORD wPort)
+が実装されています。
+
+接続先はDLLと同じフォルダのBonCasClient.iniで設定することも出来ます。
+書式及びデフォルト設定(iniがない場合)は以下の通りです。
+[Server]
+IP=127.0.0.1
+Port=6900
+
+
+■64bit用
+64bitのアプリケーションから利用する場合はx64フォルダ内のDLLを使用してください。
+
+
+■VC2005SP1のランタイムが必要です
+Microsoft Visual C++ 2005 Service Pack 1 再頒布可能パッケージ MFC のセキュリティ更新プログラム
+http://www.microsoft.com/downloads/ja-jp/details.aspx?FamilyID=ae2e1a40-7b45-4fe9-a20f-2ed2923aca62
+(使うDLLにより必要なランタイムもx86、x64で異なります。x64のOSなら両方入れておいても問題ありません)
+
+またWindowsUpdateによる更新があれば最新にしてください。
+(開発環境側もWindowsUpdateにより必要な環境が更新されている場合があります)
+
+
+■ベースにしたもの
+Multi2Dec Ver.2.10 (http://2sen.dip.jp/dtv/)
+BonCasLink Ver.1.10 z1
+
+
+■履歴
+2011/09/25	64bit用DLL追加
+2010/11/11	実験品
+
+--
+零
