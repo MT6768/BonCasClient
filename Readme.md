@@ -1,13 +1,19 @@
 
 # BonCasClient
 
-## このリポジトリについて
+BonCasClient v1.1.1 (http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient(1.1.1).zip) に同梱されているソースコードのミラー。
 
-BonCasClient v1.1.1 ( http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient(1.1.1).zip ) に同梱されているソースコードの Mirror
-
-ビルド環境を Visual Studio 2019 (VS2019) に更新した事、パッチ ( [BonCasClient_fix.diff.txt](http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient_fix.diff.txt ) ) を当てた事、この README.md を作成した事以外はオリジナルのままとなっている。  
+ビルド環境を Visual Studio 2019 (VS2019) に更新したこと、パッチ ([BonCasClient_fix.diff.txt](http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient_fix.diff.txt)) を当てたこと、この Readme.md を作成したこと以外はオリジナルのままとなっている。  
 以下のドキュメントは [BonCasClient.txt](BonCasClient.txt) を現状に合わせて一部改変し、Markdown 形式に書き換えたものである。  
 オリジナルの [BonCasClient.txt](BonCasClient.txt) も参照されたい。
+
+### 利用時の注意
+
+BonCasClient のビット数 (32bit or 64bit) は、各種 WinSCard.dll 同様に TVTest などの BonCasClient を利用するソフトに合わせる必要がある。  
+さもなければ、ライブラリの読み込みに失敗し、スクランブルの解除に失敗する。
+
+ただし、BonCasClient と BonCasLink (BonCasServer, BonCasService) が異なるビット数になっている事は問題ない。  
+BonCasClient と BonCasLink が TCP で通信しているためで、たとえば TVTest と BonCasClient が 64bit 、BonCasLink が 32bit の場合でも正常に読み込める。
 
 ----
 
@@ -33,9 +39,7 @@ EXPORT されている IF は SCardXXXX と型互換の以下9関数 CasLinkXXXX
 
 ## ダウンロード
 
-64bit のアプリケーションから利用する場合は x64 フォルダ内の DLL を使用してください。
-
-[BonCasClient v1.1.1-patch](https://github.com/miraao/BonCasClient/releases/download/v1.1.1-patch/BonCasClient_v1.1.1-patch.zip)
+[BonCasClient v1.1.1-patch](https://github.com/mizunoko/BonCasClient/releases/download/v1.1.1-patch/BonCasClient_v1.1.1-patch.zip)
 
 ## 設定
 
@@ -58,7 +62,7 @@ Visual Studio 2019 の Microsoft Visual C++ 再頒布可能パッケージ
 
 ## ベースにしたもの
 
-- Multi2Dec Ver.2.10 ( http://2sen.dip.jp/dtv/ )
+- Multi2Dec Ver.2.10 (http://2sen.dip.jp/dtv/)
 - BonCasLink Ver.1.10 z1
 
 ## 履歴
