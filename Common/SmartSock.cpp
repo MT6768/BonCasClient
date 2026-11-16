@@ -8,6 +8,9 @@
 #include "SmartSock.h"
 
 #include <ws2tcpip.h>
+#include <mutex>
+
+namespace { std::mutex winsockLifetimeLock; }
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -38,6 +41,7 @@ CSmartSock::CSmartSock()
 	, m_dwLastError(EC_NOERROR)
 {
 	// WinSock2初期化
+	std::lock_guard<std::mutex> guard(winsockLifetimeLock);
 	if(!(dwInstanceNum++))InitWinSock2();
 }
 
@@ -46,6 +50,7 @@ CSmartSock::~CSmartSock()
 	Close();
 
 	// WinSock2開放
+	std::lock_guard<std::mutex> guard(winsockLifetimeLock);
 	if(!(--dwInstanceNum))FreeWinSock2();
 }
 
@@ -93,6 +98,7 @@ const BOOL CSmartSock::Connect(const DWORD dwIP, const WORD wPort, const DWORD d
 			return FALSE;		
 			}
 	
+		m_bSockType = SOCKTYPE_TCP;
 		m_dwLastError = EC_NOERROR;
 		return TRUE;
 		}
@@ -101,8 +107,8 @@ const BOOL CSmartSock::Connect(const DWORD dwIP, const WORD wPort, const DWORD d
 	u_long nArg = 1UL;
 	fd_set FdSet{};
 	struct timeval TimeVal {};
-	TimeVal.tv_sec = 0UL;
-	TimeVal.tv_usec = dwTimeOut * 1000UL;
+	TimeVal.tv_sec = static_cast<long>(dwTimeOut / 1000UL);
+	TimeVal.tv_usec = static_cast<long>((dwTimeOut % 1000UL) * 1000UL);
 	FD_ZERO(&FdSet);
 	FD_SET(m_Socket, &FdSet);
 
@@ -111,19 +117,22 @@ const BOOL CSmartSock::Connect(const DWORD dwIP, const WORD wPort, const DWORD d
 		if(::ioctlsocket(m_Socket, FIONBIO, &nArg) == SOCKET_ERROR)throw (const DWORD)__LINE__;
 
 		// コネクト
-		if(::connect(m_Socket, (PSOCKADDR)&SockAddr, sizeof(sockaddr)) != SOCKET_ERROR)throw (const DWORD)__LINE__;
-
-		if(::WSAGetLastError() != WSAEWOULDBLOCK)throw (const DWORD)__LINE__;
-
-		// 接続完了待ち
-		if(!::select(32, NULL, &FdSet, NULL, &TimeVal))throw (const DWORD)__LINE__;
-
-		// タイムアウト判定
-		if(!FD_ISSET(m_Socket, &FdSet)){
-			Close();
-			m_dwLastError = EC_TIMEOUT;
-			return FALSE;
-			}
+        if (::connect(m_Socket, (PSOCKADDR)&SockAddr, sizeof(SockAddr)) == SOCKET_ERROR) {
+            if (::WSAGetLastError() != WSAEWOULDBLOCK) throw (const DWORD)__LINE__;
+            fd_set errors;
+            FD_ZERO(&errors);
+            FD_SET(m_Socket, &errors);
+            const int ready = ::select(0, NULL, &FdSet, &errors, &TimeVal);
+            if (ready == SOCKET_ERROR) throw (const DWORD)__LINE__;
+            if (!ready) {
+                Close();
+                m_dwLastError = EC_TIMEOUT;
+                return FALSE;
+            }
+            int error = 0, length = sizeof(error);
+            if (::getsockopt(m_Socket, SOL_SOCKET, SO_ERROR, (char*)&error, &length) || error)
+                throw (const DWORD)__LINE__;
+        }
 
 		// 同期に切り替え
 		nArg = 0UL;
@@ -258,7 +267,8 @@ const DWORD CSmartSock::SendOnce(const BYTE *pBuff, const DWORD dwMaxLen, const 
 		}
 	
 	// タイムアウト設定
-	int iValue  = 0, iSize = sizeof(int);
+	DWORD iValue = 0;
+	int iSize = sizeof(iValue);
 
 	if(::getsockopt(m_Socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&iValue, &iSize)){
 		Close();
@@ -266,8 +276,8 @@ const DWORD CSmartSock::SendOnce(const BYTE *pBuff, const DWORD dwMaxLen, const 
 		return 0UL;
 		}
 	
-	if(iValue != (int)dwTimeOut){
-		if(::setsockopt(m_Socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&iValue, sizeof(int))){
+	if(iValue != dwTimeOut){
+		if(::setsockopt(m_Socket, SOL_SOCKET, SO_SNDTIMEO, (const char *)&dwTimeOut, sizeof(dwTimeOut))){
 			Close();
 			m_dwLastError = EC_SOCKERROR;
 			return 0UL;
@@ -304,7 +314,8 @@ const DWORD CSmartSock::RecvOnce(BYTE *pBuff, const DWORD dwMaxLen, const DWORD 
 		}
 
 	// タイムアウト値設定
-	int iValue  = 0, iSize = sizeof(int);
+	DWORD iValue = 0;
+	int iSize = sizeof(iValue);
 
 	if(::getsockopt(m_Socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&iValue, &iSize)){
 		Close();
@@ -312,8 +323,8 @@ const DWORD CSmartSock::RecvOnce(BYTE *pBuff, const DWORD dwMaxLen, const DWORD 
 		return 0UL;
 		}
 
-	if(iValue != (int)dwTimeOut){
-		if(::setsockopt(m_Socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&iValue, sizeof(int))){
+	if(iValue != dwTimeOut){
+		if(::setsockopt(m_Socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&dwTimeOut, sizeof(dwTimeOut))){
 			Close();
 			m_dwLastError = EC_SOCKERROR;
 			return 0UL;
@@ -495,7 +506,7 @@ const BOOL CSmartSock::Close()
 {
 	// ソケットクローズ
 	if(m_Socket != INVALID_SOCKET){
-		if(m_bSockType = SOCKTYPE_TCP){
+		if(m_bSockType == SOCKTYPE_TCP){
 			char byData;
 			::shutdown(m_Socket, SD_BOTH);
 			while(::recv(m_Socket, &byData, 1, 0) == 1);

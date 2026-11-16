@@ -3,7 +3,12 @@
 
 BonCasClient v1.1.1 (http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient(1.1.1).zip) に同梱されているソースコードのミラー。
 
-ビルド環境を Visual Studio 2019 (VS2019) に更新したこと、パッチ ([BonCasClient_fix.diff.txt](http://www2.wazoku.net/2sen/dtvvup/source/BonCasClient_fix.diff.txt)) を当てたこと、この Readme.md を作成したこと以外はオリジナルのままとなっている。  
+既存パッチと接続先選択機能に加え、通信のタイムアウト・接続判定、バッファ長検証、カードハンドルの寿命管理を改善している。ビルドには Visual Studio の v143 C++ ツールセットと Windows SDK を使用する。
+
+既存の `[Server]` と `[Server:Port]`（`Server00` から始まる連番）の設定形式、および `IP:ポート` のリーダー名は維持する。接続失敗後の1秒待機は接続先ごとに管理する。呼び出し元は `SCardEstablishContext` が返したコンテキストを使用し、`SCARD_AUTOALLOCATE` で取得した一覧は同じコンテキストの `SCardFreeMemory` で解放する。バッファ不足時には必要長と `SCARD_E_INSUFFICIENT_BUFFER` を返し、出力バッファを書き換えない。
+
+x86・x64 の自動ビルドと回帰テストを GitHub Actions で実行する。ローカルでの実行方法と取り込み元は [Test/README.md](Test/README.md) を参照。
+
 以下のドキュメントは [BonCasClient.txt](BonCasClient.txt) を現状に合わせて一部改変し、Markdown 形式に書き換えたものである。  
 オリジナルの [BonCasClient.txt](BonCasClient.txt) も参照されたい。
 

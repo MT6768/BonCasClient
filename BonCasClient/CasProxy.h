@@ -48,5 +48,4 @@ protected:
 	DWORD	m_dwIP;
 	WORD	m_wPort;
 
-	static ULONGLONG m_ErrorDelayTime;
 };

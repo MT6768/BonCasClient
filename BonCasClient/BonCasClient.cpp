@@ -14,6 +14,12 @@
 
 #include <sstream>
 #include <string>
+#include <map>
+#include <set>
+#include <memory>
+#include <mutex>
+#include <limits>
+#include <vector>
 
 #ifdef _MANAGED
 #pragma managed(push, off)
@@ -81,7 +87,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 #ifdef _UNICODE
 					ReaderTableA << convString(wstring(szBuff)) << __SPRITTER_CHAR_A << wPort << '\0';
 					ReaderTableW << szBuff << __SPRITTER_CHAR_W << wPort << L'\0';
-#elif
+#else
 					ReaderTableA << szBuff << __SPRITTER_CHAR_A << wPort << '\0';
 					ReaderTableW << convString(string(szBuff)) << __SPRITTER_CHAR_W << wPort << L'\0';
 #endif
@@ -129,157 +135,218 @@ extern "C" __declspec(dllexport) BOOL WINAPI SetConfig(const DWORD dwIP, const W
 	return TRUE;
 }
 
-LONG CasLinkConnect(LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol, DWORD dwIP, WORD wPort)
-{
-	// プロキシインスタンス生成
-	CCasProxy *pCasProxy = new CCasProxy(NULL);
+namespace {
+struct Card {
+    CCasProxy proxy;
+    SCARDCONTEXT context;
+    std::mutex io;
+    bool active = true;
+    explicit Card(SCARDCONTEXT owner) : proxy(NULL), context(owner) {}
+};
+std::mutex registryLock;
+std::set<SCARDCONTEXT> contexts;
+std::map<SCARDHANDLE, std::shared_ptr<Card>> cards;
+std::map<const void*, SCARDCONTEXT> allocations;
+SCARDCONTEXT nextContext = 1;
+SCARDHANDLE nextCard = 1;
 
-	// IP,Port設定
-	pCasProxy->Setting(dwIP, wPort);
-	
-	// サーバに接続
-	if (!pCasProxy->Connect()) {
-		delete pCasProxy;
-		*phCard = NULL;
-		return SCARD_E_READER_UNAVAILABLE;
-	}
-
-	// ハンドルに埋め込む
-	*phCard = reinterpret_cast<SCARDHANDLE>(pCasProxy);
-	if (pdwActiveProtocol)	*pdwActiveProtocol = SCARD_PROTOCOL_T1;
-
-	return SCARD_S_SUCCESS;
+// Never reuse tokens: stale handles cannot refer to a new card/context.
+template<class T> T token(T& next) {
+    if (!next || next == (std::numeric_limits<T>::max)()) throw std::bad_alloc();
+    return next++;
 }
 
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkConnectA(SCARDCONTEXT hContext, LPCSTR szReader, DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol)
-{
-	LPCSTR p = g_ReaderTableA.c_str();
-
-	while (*p)
-	{
-		if (strcmp(p, szReader) == 0)
-		{
-			LPCSTR port_str = strrchr(p, __SPRITTER_CHAR_A);
-			int port_num;
-			if (port_str == NULL || (port_num = atoi(port_str + 1)) < 0 || port_num > USHRT_MAX) return SCARD_E_READER_UNAVAILABLE;
-
-			string server = string(p, (int)(port_str - p));
-			DWORD ip = 0;
-
-			if (::InetPtonA(AF_INET, server.c_str(), &ip) != 1) return SCARD_E_READER_UNAVAILABLE;
-
-			return CasLinkConnect(phCard, pdwActiveProtocol, htonl(ip), port_num);
-		}
-		p += strlen(p) + 1;
-	}
-	return SCARD_E_READER_UNAVAILABLE;
+template<class C> LONG listReaders(SCARDCONTEXT context, const std::basic_string<C>& names,
+                                 C* output, LPDWORD length) {
+    if (!length) return SCARD_E_INVALID_PARAMETER;
+    std::lock_guard<std::mutex> guard(registryLock);
+    if (!contexts.count(context)) return SCARD_E_INVALID_HANDLE;
+    const DWORD capacity = *length;
+    *length = static_cast<DWORD>(names.size());
+    if (!output) return SCARD_S_SUCCESS;
+    if (capacity == SCARD_AUTOALLOCATE) {
+        *reinterpret_cast<C**>(output) = NULL;
+        // Use a common allocation type for FreeMemory and ReleaseContext.
+        std::unique_ptr<BYTE[]> bytes(new BYTE[names.size() * sizeof(C)]);
+        CopyMemory(bytes.get(), names.data(), names.size() * sizeof(C));
+        allocations.emplace(bytes.get(), context);
+        *reinterpret_cast<C**>(output) = reinterpret_cast<C*>(bytes.release());
+        return SCARD_S_SUCCESS;
+    }
+    if (capacity < names.size()) return SCARD_E_INSUFFICIENT_BUFFER;
+    CopyMemory(output, names.data(), names.size() * sizeof(C));
+    return SCARD_S_SUCCESS;
 }
 
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkConnectW(SCARDCONTEXT hContext, LPCWSTR szReader, DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol)
-{
-	LPCWSTR p = g_ReaderTableW.c_str();
-
-	while (*p)
-	{
-		if (wcscmp(p, szReader) == 0)
-		{
-			LPCWSTR port_str = wcsrchr(p, __SPRITTER_CHAR_W);
-			int port_num;
-			if (port_str == NULL || (port_num = _wtoi(port_str + 1)) < 0 || port_num > USHRT_MAX) return SCARD_E_READER_UNAVAILABLE;
-
-			wstring server = wstring(p, (int)(port_str - p));
-			DWORD ip = 0;
-
-			if (::InetPtonW(AF_INET, server.c_str(), &ip) != 1) return SCARD_E_READER_UNAVAILABLE;
-
-			return CasLinkConnect(phCard, pdwActiveProtocol, htonl(ip), port_num);
-		}
-		p += wcslen(p) + 1;
-	}
-	return SCARD_E_READER_UNAVAILABLE;
+template<class C> LONG connectReader(SCARDCONTEXT context, const C* name,
+    const std::basic_string<C>& names, LPSCARDHANDLE result, LPDWORD protocol) {
+    if (!result) return SCARD_E_INVALID_PARAMETER;
+    *result = 0;
+    if (!name) return SCARD_E_INVALID_PARAMETER;
+    std::unique_lock<std::mutex> guard(registryLock);
+    if (!contexts.count(context)) return SCARD_E_INVALID_HANDLE;
+    for (const C* entry = names.c_str(); *entry; entry += std::char_traits<C>::length(entry) + 1) {
+        if (std::basic_string<C>(entry) != name) continue;
+        const std::basic_string<C> endpoint(entry);
+        const auto separator = endpoint.rfind(static_cast<C>(':'));
+        if (separator == std::basic_string<C>::npos) return SCARD_E_READER_UNAVAILABLE;
+        const std::basic_string<C> host = endpoint.substr(0, separator);
+        const std::basic_string<C> portText = endpoint.substr(separator + 1);
+        unsigned long port = 0;
+        for (C digit : portText) {
+            if (digit < '0' || digit > '9' || port > 6553) return SCARD_E_READER_UNAVAILABLE;
+            port = port * 10 + digit - '0';
+        }
+        if (!port || port > 65535) return SCARD_E_READER_UNAVAILABLE;
+        std::string address;
+        for (C ch : host) {
+            if ((ch < '0' || ch > '9') && ch != '.') return SCARD_E_READER_UNAVAILABLE;
+            address.push_back(static_cast<char>(ch));
+        }
+        IN_ADDR ip = {};
+        if (InetPtonA(AF_INET, address.c_str(), &ip) != 1) return SCARD_E_READER_UNAVAILABLE;
+        auto card = std::make_shared<Card>(context);
+        card->proxy.Setting(ntohl(ip.S_un.S_addr), static_cast<WORD>(port));
+        guard.unlock();
+        const BOOL connected = card->proxy.Connect();
+        guard.lock();
+        if (!contexts.count(context)) return SCARD_E_INVALID_HANDLE;
+        if (!connected) return SCARD_E_READER_UNAVAILABLE;
+        const SCARDHANDLE handle = token(nextCard);
+        cards.emplace(handle, card);
+        *result = handle;
+        if (protocol) *protocol = SCARD_PROTOCOL_T1;
+        return SCARD_S_SUCCESS;
+    }
+    return SCARD_E_READER_UNAVAILABLE;
+}
 }
 
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkDisconnect(SCARDHANDLE hCard, DWORD dwDisposition)
-{
-	// サーバから切断
-	CCasProxy *pCasProxy = reinterpret_cast<CCasProxy *>(hCard);
-	if (pCasProxy)	delete pCasProxy;
+// No C++ exception may escape the DLL's C ABI.
+#define API extern "C" __declspec(dllexport) LONG WINAPI
+#define TRY_API try {
+#define END_API } catch (const std::bad_alloc&) { return SCARD_E_NO_MEMORY; } \
+    catch (...) { return SCARD_F_INTERNAL_ERROR; }
 
-	return SCARD_S_SUCCESS;
+API CasLinkConnectA(SCARDCONTEXT context, LPCSTR name, DWORD, DWORD,
+                   LPSCARDHANDLE result, LPDWORD protocol) {
+    TRY_API
+    return connectReader(context, name, g_ReaderTableA, result, protocol);
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID pvReserved2, LPSCARDCONTEXT phContext)
-{
-	return SCARD_S_SUCCESS;
+API CasLinkConnectW(SCARDCONTEXT context, LPCWSTR name, DWORD, DWORD,
+                   LPSCARDHANDLE result, LPDWORD protocol) {
+    TRY_API
+    return connectReader(context, name, g_ReaderTableW, result, protocol);
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkFreeMemory(SCARDCONTEXT hContext, LPCVOID pvMem)
-{
-	return SCARD_S_SUCCESS;
+API CasLinkEstablishContext(DWORD, LPCVOID, LPCVOID, LPSCARDCONTEXT result) {
+    TRY_API
+    if (!result) return SCARD_E_INVALID_PARAMETER;
+    *result = 0;
+    std::lock_guard<std::mutex> guard(registryLock);
+    const SCARDCONTEXT context = token(nextContext);
+    contexts.insert(context);
+    *result = context;
+    return SCARD_S_SUCCESS;
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkListReadersA(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR mszReaders, LPDWORD pcchReaders)
-{
-	if(pcchReaders){
-		if ((*pcchReaders == SCARD_AUTOALLOCATE) && mszReaders) {
-			*((LPCSTR*)mszReaders) = g_ReaderTableA.c_str();
-			return SCARD_S_SUCCESS;
-		}else{
-			*pcchReaders = (DWORD)g_ReaderTableA.length();//文字数を返す
-		}
-	}
-
-	if (mszReaders && pcchReaders)
-	{
-		DWORD len = (*pcchReaders < g_ReaderTableA.length()) ? *pcchReaders : (DWORD)g_ReaderTableA.length();
-
-		::CopyMemory(mszReaders, g_ReaderTableA.c_str(), len * sizeof(char));
-	}
-
-	return SCARD_S_SUCCESS;
+API CasLinkDisconnect(SCARDHANDLE handle, DWORD) {
+    TRY_API
+    std::shared_ptr<Card> card;
+    {
+        std::lock_guard<std::mutex> guard(registryLock);
+        auto it = cards.find(handle);
+        if (it == cards.end()) return SCARD_E_INVALID_HANDLE;
+        card = it->second;
+        cards.erase(it);
+    }
+    std::lock_guard<std::mutex> io(card->io);
+    card->active = false;
+    return SCARD_S_SUCCESS;
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkListReadersW(SCARDCONTEXT hContext, LPCWSTR mszGroups, LPWSTR mszReaders, LPDWORD pcchReaders)
-{
-	if (pcchReaders) {
-		if ((*pcchReaders == SCARD_AUTOALLOCATE) && mszReaders) {
-			*((LPCWSTR*)mszReaders) = g_ReaderTableW.c_str();
-			return SCARD_S_SUCCESS;
-		}
-		else {
-			*pcchReaders = (DWORD)g_ReaderTableW.length();//文字数を返す
-		}
-	}
-
-	if (mszReaders && pcchReaders)
-	{
-		DWORD len = (*pcchReaders < g_ReaderTableW.length()) ? *pcchReaders : (DWORD)g_ReaderTableW.length();
-		
-		::CopyMemory(mszReaders, g_ReaderTableW.c_str(), len * sizeof(wchar_t));
-	}
-
-	return SCARD_S_SUCCESS;
+API CasLinkReleaseContext(SCARDCONTEXT context) {
+    TRY_API
+    std::vector<std::shared_ptr<Card>> retired;
+    {
+        std::lock_guard<std::mutex> guard(registryLock);
+        if (!contexts.count(context)) return SCARD_E_INVALID_HANDLE;
+        // Reserve before modifying state so allocation failure leaves it intact.
+        retired.reserve(cards.size());
+        contexts.erase(context);
+        for (auto it = cards.begin(); it != cards.end();) {
+            if (it->second->context == context) {
+                retired.push_back(it->second);
+                it = cards.erase(it);
+            } else ++it;
+        }
+        for (auto it = allocations.begin(); it != allocations.end();) {
+            if (it->second == context) {
+                delete[] static_cast<const BYTE*>(it->first);
+                it = allocations.erase(it);
+            } else ++it;
+        }
+    }
+    for (auto& card : retired) {
+        std::lock_guard<std::mutex> io(card->io);
+        card->active = false;
+    }
+    return SCARD_S_SUCCESS;
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkTransmit(SCARDHANDLE hCard, LPCSCARD_IO_REQUEST pioSendPci, LPCBYTE pbSendBuffer, DWORD cbSendLength, LPSCARD_IO_REQUEST pioRecvPci, LPBYTE pbRecvBuffer, LPDWORD pcbRecvLength)
-{
-	// サーバにリクエスト送受信
-	CCasProxy *pCasProxy = reinterpret_cast<CCasProxy *>(hCard);
-	if (!pCasProxy)	return SCARD_E_READER_UNAVAILABLE;
-
-	const DWORD dwRecvLen = pCasProxy->TransmitCommand(pbSendBuffer, cbSendLength, pbRecvBuffer);
-	if (pcbRecvLength)	*pcbRecvLength = dwRecvLen;
-
-	return (dwRecvLen)? SCARD_S_SUCCESS : SCARD_E_TIMEOUT;
+API CasLinkFreeMemory(SCARDCONTEXT context, LPCVOID memory) {
+    TRY_API
+    std::lock_guard<std::mutex> guard(registryLock);
+    if (!contexts.count(context)) return SCARD_E_INVALID_HANDLE;
+    auto it = allocations.find(memory);
+    if (it == allocations.end() || it->second != context) return SCARD_E_INVALID_PARAMETER;
+    delete[] static_cast<const BYTE*>(memory);
+    allocations.erase(it);
+    return SCARD_S_SUCCESS;
+    END_API
 }
-
-extern "C" __declspec(dllexport) LONG WINAPI CasLinkReleaseContext(SCARDCONTEXT hContext)
-{
-	return SCARD_S_SUCCESS;
+API CasLinkListReadersA(SCARDCONTEXT context, LPCSTR, LPSTR output, LPDWORD length) {
+    TRY_API
+    return listReaders(context, g_ReaderTableA, output, length);
+    END_API
 }
-
+API CasLinkListReadersW(SCARDCONTEXT context, LPCWSTR, LPWSTR output, LPDWORD length) {
+    TRY_API
+    return listReaders(context, g_ReaderTableW, output, length);
+    END_API
+}
+API CasLinkTransmit(SCARDHANDLE handle, LPCSCARD_IO_REQUEST, LPCBYTE send, DWORD sendLength,
+                    LPSCARD_IO_REQUEST recvPci, LPBYTE recv, LPDWORD recvLength) {
+    TRY_API
+    if (!send || !sendLength || sendLength > 255 || !recvLength || !recv)
+        return SCARD_E_INVALID_PARAMETER;
+    if (recvPci && recvPci->cbPciLength < sizeof(SCARD_IO_REQUEST))
+        return SCARD_E_INSUFFICIENT_BUFFER;
+    std::shared_ptr<Card> card;
+    {
+        std::lock_guard<std::mutex> guard(registryLock);
+        auto it = cards.find(handle);
+        if (it == cards.end()) return SCARD_E_INVALID_HANDLE;
+        card = it->second;
+    }
+    std::lock_guard<std::mutex> io(card->io);
+    if (!card->active) return SCARD_E_INVALID_HANDLE;
+    BYTE response[255];
+    const DWORD length = card->proxy.TransmitCommand(send, sendLength, response);
+    const DWORD capacity = *recvLength;
+    *recvLength = length;
+    if (!length) return SCARD_E_TIMEOUT;
+    if (capacity < length) return SCARD_E_INSUFFICIENT_BUFFER;
+    CopyMemory(recv, response, length);
+    if (recvPci) {
+        recvPci->dwProtocol = SCARD_PROTOCOL_T1;
+        recvPci->cbPciLength = sizeof(SCARD_IO_REQUEST);
+    }
+    return SCARD_S_SUCCESS;
+    END_API
+}
 
 #ifdef _MANAGED
 #pragma managed(pop)
 #endif
-

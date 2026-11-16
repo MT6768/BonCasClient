@@ -1,0 +1,31 @@
+name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - platform: Win32
+            arch: x86
+            dll: Release/BonCasClient.dll
+          - platform: x64
+            arch: x64
+            dll: x64/Release/BonCasClient.dll
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Build DLL and run regression tests
+        shell: pwsh
+        run: ./Test/Run.ps1 -Platform ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BonCasClient-${{ matrix.platform }}
+          path: ${{ matrix.dll }}
+          if-no-files-found: error
